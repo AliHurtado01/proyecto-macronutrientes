@@ -18,6 +18,7 @@ class DatabaseSeeder extends Seeder
         $this->call([
             CategorySeeder::class,
             ProductSeeder::class,
+            DishSeeder::class,
         ]);
 
         // Crear usuario de prueba

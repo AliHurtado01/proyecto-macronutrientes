@@ -2,63 +2,118 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Menu;
+use App\Models\Dish;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Carbon\Carbon;
 
 class MenuController extends Controller
 {
     /**
-     * Display a listing of the resource.
+     * Muestra el calendario (vista semanal o lista)
      */
-    public function index()
+    public function index(Request $request)
     {
-        //
+        // Por defecto mostramos la semana actual
+        $date = $request->has('date')
+            ? Carbon::parse($request->date)
+            : Carbon::today();
+
+        $startOfWeek = $date->copy()->startOfWeek();
+        $endOfWeek = $date->copy()->endOfWeek();
+
+        // Obtener menús de esta semana
+        $menus = Menu::where('user_id', Auth::id())
+            ->whereBetween('date', [$startOfWeek, $endOfWeek])
+            ->with('dishes') // Carga impaciente para optimizar
+            ->get()
+            ->groupBy(function ($item) {
+                return $item->date->format('Y-m-d'); // Agrupar por día
+            });
+
+        return view('menus.index', compact('menus', 'startOfWeek', 'endOfWeek', 'date'));
     }
 
     /**
-     * Show the form for creating a new resource.
+     * Formulario para crear menú
      */
-    public function create()
+    public function create(Request $request)
     {
-        //
+        // Fecha seleccionada o hoy
+        $date = $request->input('date', Carbon::today()->format('Y-m-d'));
+
+        // Mis platos disponibles
+        $dishes = Dish::where('user_id', Auth::id())
+            ->orderBy('name')
+            ->get(['id', 'name']);
+
+        return view('menus.create', compact('dishes', 'date'));
     }
 
     /**
-     * Store a newly created resource in storage.
+     * Guardar menú
      */
     public function store(Request $request)
     {
-        //
+        $validated = $request->validate([
+            'date' => 'required|date',
+            'meal_type' => 'required|string', // breakfast, lunch...
+            'dishes' => 'required|array|min:1',
+            'dishes.*.id' => 'required|exists:dishes,id',
+            'dishes.*.portions' => 'required|numeric|min:0.1',
+        ]);
+
+        // Verificar duplicados (ej: ya existe Comida para hoy)
+        $exists = Menu::where('user_id', Auth::id())
+            ->where('date', $validated['date'])
+            ->where('meal_type', $validated['meal_type'])
+            ->exists();
+
+        if ($exists) {
+            return back()->withErrors(['meal_type' => 'Ya existe un menú para este momento del día. Edítalo en su lugar.']);
+        }
+
+        // 1. Crear el menú
+        $menu = Menu::create([
+            'user_id' => Auth::id(),
+            'date' => $validated['date'],
+            'meal_type' => $validated['meal_type'],
+        ]);
+
+        // 2. Asociar platos con porciones
+        foreach ($validated['dishes'] as $dish) {
+            $menu->dishes()->attach($dish['id'], ['portions' => $dish['portions']]);
+        }
+
+        return redirect()->route('menus.index', ['date' => $validated['date']])
+            ->with('success', 'Menú planificado correctamente.');
     }
 
     /**
-     * Display the specified resource.
+     * Ver detalles del menú
      */
-    public function show(string $id)
+    public function show(Menu $menu)
     {
-        //
+        if ($menu->user_id != Auth::id()) abort(403);
+
+        $menu->load('dishes.products');
+        // Calculamos nutrientes totales al vuelo usando la función del modelo
+        $totals = $menu->calculateNutrients();
+
+        return view('menus.show', compact('menu', 'totals'));
     }
 
     /**
-     * Show the form for editing the specified resource.
+     * Eliminar menú
      */
-    public function edit(string $id)
+    public function destroy(Menu $menu)
     {
-        //
-    }
+        if ($menu->user_id != Auth::id()) abort(403);
+        $date = $menu->date->format('Y-m-d'); // Para volver al mismo día
+        $menu->delete();
 
-    /**
-     * Update the specified resource in storage.
-     */
-    public function update(Request $request, string $id)
-    {
-        //
-    }
-
-    /**
-     * Remove the specified resource from storage.
-     */
-    public function destroy(string $id)
-    {
-        //
+        return redirect()->route('menus.index', ['date' => $date])
+            ->with('success', 'Comida eliminada del calendario.');
     }
 }
