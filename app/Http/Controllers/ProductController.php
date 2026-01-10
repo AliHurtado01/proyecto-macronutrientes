@@ -15,9 +15,9 @@ class ProductController extends Controller
     public function index(Request $request)
     {
         // 1. Consulta base: Productos de BEDCA (user_id null) O Míos
-        $query = Product::where(function($q) {
+        $query = Product::where(function ($q) {
             $q->whereNull('user_id')
-              ->orWhere('user_id', Auth::id());
+                ->orWhere('user_id', Auth::id());
         });
 
         // 2. Filtros
@@ -35,9 +35,9 @@ class ProductController extends Controller
 
         // 3. Ordenar y Paginar
         $products = $query->with('category')
-                          ->orderBy('is_favorite', 'desc')
-                          ->orderBy('name', 'asc')
-                          ->paginate(12);
+            ->orderBy('is_favorite', 'desc')
+            ->orderBy('name', 'asc')
+            ->paginate(12);
 
         $categories = Category::orderBy('name')->get();
 

@@ -4,10 +4,18 @@
             <h2 class="font-semibold text-xl text-gray-800 leading-tight">
                 {{ __('Calendario de Comidas') }}
             </h2>
-            <a href="{{ route('menus.create', ['date' => $date->format('Y-m-d')]) }}"
-                class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded shadow">
-                + Planificar Comida
-            </a>
+            <div class="flex space-x-2">
+                {{-- Botón PDF NUEVO --}}
+                <a href="{{ route('menus.export_pdf', ['date' => $date->format('Y-m-d')]) }}"
+                    class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded shadow text-sm flex items-center">
+                    <span class="mr-1">📄</span> PDF Semanal
+                </a>
+
+                <a href="{{ route('menus.create', ['date' => $date->format('Y-m-d')]) }}"
+                    class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded shadow text-sm">
+                    + Planificar
+                </a>
+            </div>
         </div>
     </x-slot>
 

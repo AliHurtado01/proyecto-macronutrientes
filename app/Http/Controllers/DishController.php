@@ -25,8 +25,8 @@ class DishController extends Controller
         }
 
         $dishes = $query->orderBy('is_favorite', 'desc')
-                        ->orderBy('name', 'asc')
-                        ->paginate(12);
+            ->orderBy('name', 'asc')
+            ->paginate(12);
 
         return view('dishes.index', compact('dishes'));
     }
@@ -38,8 +38,8 @@ class DishController extends Controller
     {
         // Necesitamos la lista de productos para el selector
         $products = Product::accessibleBy(Auth::id())
-                           ->orderBy('name')
-                           ->get(['id', 'name', 'calories']); // Solo traemos lo necesario para optimizar
+            ->orderBy('name')
+            ->get(['id', 'name', 'calories']); // Solo traemos lo necesario para optimizar
 
         return view('dishes.create', compact('products'));
     }

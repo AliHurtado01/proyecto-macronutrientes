@@ -7,6 +7,7 @@ use App\Models\Dish;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Carbon\Carbon;
+use Barryvdh\DomPDF\Facade\Pdf;
 
 class MenuController extends Controller
 {
@@ -107,13 +108,37 @@ class MenuController extends Controller
     /**
      * Eliminar menú
      */
-    public function destroy(Menu $menu)
+public function destroy(Menu $menu)
     {
         if ($menu->user_id != Auth::id()) abort(403);
-        $date = $menu->date->format('Y-m-d'); // Para volver al mismo día
+
+        $date = Carbon::parse($menu->date)->format('Y-m-d');
+
         $menu->delete();
 
         return redirect()->route('menus.index', ['date' => $date])
             ->with('success', 'Comida eliminada del calendario.');
+    }
+
+    public function exportPdf(Request $request)
+    {
+        $date = $request->has('date') ? Carbon::parse($request->date) : Carbon::today();
+        $startOfWeek = $date->copy()->startOfWeek();
+        $endOfWeek = $date->copy()->endOfWeek();
+
+        // Obtener datos ordenados
+        $menus = Menu::where('user_id', Auth::id())
+            ->whereBetween('date', [$startOfWeek, $endOfWeek])
+            ->with('dishes')
+            ->orderBy('date')
+            ->get()
+            ->groupBy(function($item) {
+                return $item->date->format('Y-m-d');
+            });
+
+        // Generar PDF usando una vista especial
+        $pdf = Pdf::loadView('menus.pdf', compact('menus', 'startOfWeek', 'endOfWeek'));
+
+        return $pdf->download('menu-semanal-' . $startOfWeek->format('d-m-Y') . '.pdf');
     }
 }
