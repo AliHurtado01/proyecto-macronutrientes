@@ -49,12 +49,23 @@
                 @forelse ($products as $product)
                     <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg border border-gray-100 hover:shadow-md transition relative">
 
-                        {{-- Etiqueta: Mío vs BEDCA --}}
+                        {{-- Etiqueta: Tipo de Producto (LÓGICA NUEVA INTEGRADA) --}}
                         <div class="absolute top-2 right-2">
-                            @if($product->user_id)
-                                <span class="bg-green-100 text-green-800 text-xs font-semibold px-2.5 py-0.5 rounded border border-green-200">Mío</span>
+                            @if(!$product->user_id)
+                                {{-- Producto Global (BEDCA o Admin) --}}
+                                <span class="bg-blue-100 text-blue-800 text-xs font-semibold px-2.5 py-0.5 rounded border border-blue-200">
+                                    Global
+                                </span>
+                            @elseif($product->user_id === auth()->id())
+                                {{-- Mi Producto Privado --}}
+                                <span class="bg-green-100 text-green-800 text-xs font-semibold px-2.5 py-0.5 rounded border border-green-200">
+                                    Mío
+                                </span>
                             @else
-                                <span class="bg-blue-50 text-blue-600 text-xs font-semibold px-2.5 py-0.5 rounded border border-blue-100">BEDCA</span>
+                                {{-- Producto Privado de OTRO usuario (Solo visible para Admin) --}}
+                                <span class="bg-purple-100 text-purple-800 text-xs font-semibold px-2.5 py-0.5 rounded border border-purple-200">
+                                    Usuario #{{ $product->user_id }}
+                                </span>
                             @endif
                         </div>
 
@@ -109,10 +120,20 @@
                                         </form>
                                     </div>
 
-                                {{-- Si es BEDCA: Solo lectura --}}
+                                {{-- Si es ADMIN viendo producto ajeno: Puede borrar pero no editar/favorito --}}
+                                @elseif(auth()->user()->hasRole('admin'))
+                                    <span class="text-xs text-purple-600 font-bold">Admin:</span>
+                                    <form action="{{ route('products.destroy', $product) }}" method="POST" onsubmit="return confirm('¿Como ADMIN, seguro que quieres borrar este producto de OTRO usuario?');">
+                                        @csrf @method('DELETE')
+                                        <button type="submit" class="text-sm text-red-600 hover:text-red-900 font-bold border border-red-200 bg-red-50 px-2 py-1 rounded">
+                                            Forzar Borrado 🗑️
+                                        </button>
+                                    </form>
+
+                                {{-- Si es BEDCA o Global (y no soy dueño): Solo lectura --}}
                                 @else
                                     <span class="text-xs text-gray-400 italic" title="No puedes marcar favoritos productos globales en esta versión">
-                                        ♥ Global (No editable)
+                                        ♥ Global (Solo lectura)
                                     </span>
                                 @endif
                             </div>

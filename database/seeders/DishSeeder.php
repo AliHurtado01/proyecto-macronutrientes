@@ -11,7 +11,7 @@ class DishSeeder extends Seeder
 {
     public function run(): void
     {
-        // 1. Obtener el usuario de prueba para asignarle los platos
+        // 1. Obtener el usuario de prueba para asignarle los platos privados
         $user = User::where('email', 'user@nutritrack.com')->first();
 
         if (!$user) {
@@ -19,17 +19,17 @@ class DishSeeder extends Seeder
             return;
         }
 
-        // 2. Lista de "Recetas Maestras" para intentar crear
-        // El script buscará productos que contengan esas palabras clave
+        // 2. Lista de "Recetas Maestras" (10 en total)
         $recipes = [
+            // --- BLOQUE 1: Para el Usuario ---
             [
                 'name' => 'Tortilla de Patatas',
                 'description' => 'Receta clásica española con huevo y patata.',
                 'servings' => 4,
                 'ingredients' => [
-                    ['search' => 'huevo', 'qty' => 400],  // ~6 huevos
-                    ['search' => 'patata', 'qty' => 600], // 3 patatas grandes
-                    ['search' => 'aceite', 'qty' => 50],  // Un chorro generoso
+                    ['search' => 'huevo', 'qty' => 400],
+                    ['search' => 'patata', 'qty' => 600],
+                    ['search' => 'aceite', 'qty' => 50],
                 ]
             ],
             [
@@ -69,12 +69,13 @@ class DishSeeder extends Seeder
                 'description' => 'Pasta con salsa de tomate y carne.',
                 'servings' => 4,
                 'ingredients' => [
-                    ['search' => 'pasta', 'qty' => 400], // O 'macarrón'
+                    ['search' => 'pasta', 'qty' => 400],
                     ['search' => 'tomate', 'qty' => 300],
                     ['search' => 'carne', 'qty' => 200],
                     ['search' => 'queso', 'qty' => 50],
                 ]
             ],
+            // --- BLOQUE 2: Globales (Para todos) ---
             [
                 'name' => 'Desayuno Saludable',
                 'description' => 'Avena con leche y fruta.',
@@ -82,7 +83,7 @@ class DishSeeder extends Seeder
                 'ingredients' => [
                     ['search' => 'avena', 'qty' => 50],
                     ['search' => 'leche', 'qty' => 250],
-                    ['search' => 'plátano', 'qty' => 100], // O 'manzana'
+                    ['search' => 'plátano', 'qty' => 100],
                 ]
             ],
             [
@@ -103,7 +104,7 @@ class DishSeeder extends Seeder
                     ['search' => 'lenteja', 'qty' => 300],
                     ['search' => 'zanahoria', 'qty' => 100],
                     ['search' => 'patata', 'qty' => 200],
-                    ['search' => 'chorizo', 'qty' => 100], // O carne de cerdo
+                    ['search' => 'chorizo', 'qty' => 100],
                 ]
             ],
             [
@@ -111,7 +112,7 @@ class DishSeeder extends Seeder
                 'description' => 'Pescado blanco con guarnición.',
                 'servings' => 1,
                 'ingredients' => [
-                    ['search' => 'merluza', 'qty' => 200], // O 'pescado'
+                    ['search' => 'merluza', 'qty' => 200],
                     ['search' => 'lechuga', 'qty' => 100],
                     ['search' => 'aceite', 'qty' => 10],
                 ]
@@ -122,7 +123,7 @@ class DishSeeder extends Seeder
                 'servings' => 1,
                 'ingredients' => [
                     ['search' => 'leche', 'qty' => 300],
-                    ['search' => 'proteína', 'qty' => 30], // Puede que no encuentre esto en BEDCA, buscará 'leche' en polvo o similar
+                    ['search' => 'proteína', 'qty' => 30],
                     ['search' => 'cacao', 'qty' => 10],
                 ]
             ],
@@ -130,12 +131,25 @@ class DishSeeder extends Seeder
 
         $createdCount = 0;
 
-        // 3. Crear los platos "reales"
-        foreach ($recipes as $recipe) {
-            $this->command->info("🍳 Cocinando: {$recipe['name']}...");
+        // 3. Crear los platos
+        foreach ($recipes as $index => $recipe) {
+
+            // LÓGICA DE REPARTO:
+            // Índices 0, 1, 2, 3, 4 (Total 5) -> Para el Usuario
+            // Índices 5, 6, 7, 8, 9 (Total 5) -> Globales (user_id = null)
+
+            if ($index < 5) {
+                $ownerId = $user->id;
+                $label = "👤 Usuario";
+            } else {
+                $ownerId = null; // Global
+                $label = "🌍 Global";
+            }
+
+            $this->command->info("$label - 🍳 Cocinando: {$recipe['name']}...");
 
             $dish = Dish::create([
-                'user_id' => $user->id,
+                'user_id' => $ownerId,
                 'name' => $recipe['name'],
                 'description' => $recipe['description'],
                 'servings' => $recipe['servings'],
@@ -144,10 +158,10 @@ class DishSeeder extends Seeder
             $hasIngredients = false;
 
             foreach ($recipe['ingredients'] as $ing) {
-                // Buscamos un producto que coincida (ej: "Huevo" -> "Huevo de gallina")
+                // Buscamos un producto que coincida
                 $product = Product::where('name', 'like', '%' . $ing['search'] . '%')->first();
 
-                // Si no encuentra "pasta", intenta buscar algo genérico de la DB para no dejarlo vacío
+                // Si no encuentra, busca algo genérico de la DB para no romper
                 if (!$product) {
                     $product = Product::inRandomOrder()->first();
                 }
@@ -162,24 +176,28 @@ class DishSeeder extends Seeder
                 $dish->calculateNutrients();
                 $createdCount++;
             } else {
-                $dish->delete(); // Borrar si no se pudo añadir nada (raro)
+                $dish->delete();
             }
         }
 
-        // 4. Relleno: Si faltan platos para llegar a 10, crea aleatorios
+        // 4. Relleno: Si por algún error de búsqueda de ingredientes faltan platos, rellenamos
         while ($createdCount < 10) {
             $createdCount++;
-            $name = "Plato Sorpresa #$createdCount";
-            $this->command->info("🎲 Generando aleatorio: $name");
+
+            // También alternamos el relleno: pares usuario, impares global
+            $isGlobal = ($createdCount % 2 != 0);
+            $ownerId = $isGlobal ? null : $user->id;
+            $name = $isGlobal ? "Plato Global Aleatorio $createdCount" : "Plato Usuario Aleatorio $createdCount";
+
+            $this->command->info("🎲 Generando extra: $name");
 
             $dish = Dish::create([
-                'user_id' => $user->id,
+                'user_id' => $ownerId,
                 'name' => $name,
-                'description' => 'Plato generado aleatoriamente para pruebas.',
+                'description' => 'Plato generado aleatoriamente.',
                 'servings' => rand(1, 4),
             ]);
 
-            // Añadir 3 a 6 ingredientes al azar
             $randomProducts = Product::inRandomOrder()->limit(rand(3, 6))->get();
 
             foreach ($randomProducts as $p) {
@@ -189,6 +207,6 @@ class DishSeeder extends Seeder
             $dish->calculateNutrients();
         }
 
-        $this->command->info("✅ ¡Listo! Se han servido $createdCount platos.");
+        $this->command->info("✅ ¡Listo! Se han servido $createdCount platos (5 privados + 5 globales).");
     }
 }

@@ -10,15 +10,13 @@ use Illuminate\Support\Facades\Auth;
 class ProductController extends Controller
 {
     /**
-     * Listado de productos
+     * Listado de productos (Buscador y Filtros)
      */
     public function index(Request $request)
     {
-        // 1. Consulta base: Productos de BEDCA (user_id null) O Míos
-        $query = Product::where(function ($q) {
-            $q->whereNull('user_id')
-                ->orWhere('user_id', Auth::id());
-        });
+        // 1. Consulta Base: Usamos el Scope 'accessibleBy' del Modelo.
+        // Como ya arreglamos el modelo, si soy Admin, esto traerá TODOS los productos.
+        $query = Product::accessibleBy();
 
         // 2. Filtros
         if ($request->filled('category_id')) {
@@ -35,9 +33,9 @@ class ProductController extends Controller
 
         // 3. Ordenar y Paginar
         $products = $query->with('category')
-            ->orderBy('is_favorite', 'desc')
-            ->orderBy('name', 'asc')
-            ->paginate(12);
+                          ->orderBy('is_favorite', 'desc') // Favoritos primero
+                          ->orderBy('name', 'asc')         // Luego alfabéticamente
+                          ->paginate(12);
 
         $categories = Category::orderBy('name')->get();
 
@@ -54,7 +52,7 @@ class ProductController extends Controller
     }
 
     /**
-     * Guardar nuevo producto
+     * Guardar producto
      */
     public function store(Request $request)
     {
@@ -68,9 +66,17 @@ class ProductController extends Controller
         ]);
 
         $product = new Product($validated);
-        $product->user_id = Auth::id(); // Es mío
 
-        // Rellenar opcionales con 0
+        // --- VISIBILIDAD ---
+        // Si es Admin -> user_id = null (Producto Global para todos)
+        // Si es User -> user_id = mi id (Producto Privado)
+        if (Auth::user()->hasRole('admin')) {
+            $product->user_id = null;
+        } else {
+            $product->user_id = Auth::id();
+        }
+
+        // Asignar opcionales
         $product->fiber = $request->input('fiber', 0);
         $product->saturated_fat = $request->input('saturated_fat', 0);
         $product->monounsaturated_fat = $request->input('monounsaturated_fat', 0);
@@ -81,7 +87,7 @@ class ProductController extends Controller
 
         $product->save();
 
-        return redirect()->route('products.index')->with('success', 'Ingrediente creado.');
+        return redirect()->route('products.index')->with('success', 'Ingrediente creado correctamente.');
     }
 
     /**
@@ -89,32 +95,44 @@ class ProductController extends Controller
      */
     public function show(Product $product)
     {
-        // Seguridad: Si es privado y no es mío, error 403
-        if ($product->user_id && $product->user_id != Auth::id()) {
-            abort(403);
+        // Seguridad: Permitir ver si es global, mío O si soy ADMIN
+        $isGlobal = is_null($product->user_id);
+        $isMine = $product->user_id == Auth::id();
+        $isAdmin = Auth::user()->hasRole('admin');
+
+        if (!$isGlobal && !$isMine && !$isAdmin) {
+            abort(403, 'No tienes permiso para ver este producto.');
         }
+
         return view('products.show', compact('product'));
     }
 
     /**
-     * Editar
+     * Editar producto
      */
     public function edit(Product $product)
     {
-        // Solo edito lo mío
-        if ($product->isGlobal() || $product->user_id != Auth::id()) {
-            abort(403, 'No puedes editar productos globales.');
+        // Solo edito lo mío. El Admin tampoco debería editar cosas de usuarios para no romper sus dietas,
+        // pero sí puede editar sus propios productos globales.
+        if ($product->user_id != Auth::id() && !$product->isGlobal()) {
+             // Si quieres que el Admin edite CUALQUIER cosa, cambia la condición.
+             // Aquí dejamos que solo edite lo suyo o globales si es admin.
+             if (!Auth::user()->hasRole('admin') || ($product->user_id && $product->user_id != Auth::id())) {
+                 abort(403, 'No puedes editar productos que no creaste.');
+             }
         }
+
         $categories = Category::orderBy('name')->get();
         return view('products.edit', compact('product', 'categories'));
     }
 
     /**
-     * Actualizar
+     * Actualizar producto
      */
     public function update(Request $request, Product $product)
     {
-        if ($product->isGlobal() || $product->user_id != Auth::id()) {
+        // Misma lógica de seguridad que en edit
+        if (!Auth::user()->hasRole('admin') && $product->user_id != Auth::id()) {
             abort(403);
         }
 
@@ -128,7 +146,7 @@ class ProductController extends Controller
         ]);
 
         $product->fill($validated);
-        // Actualizar opcionales
+
         $product->fiber = $request->input('fiber', 0);
         $product->saturated_fat = $request->input('saturated_fat', 0);
         $product->monounsaturated_fat = $request->input('monounsaturated_fat', 0);
@@ -137,37 +155,29 @@ class ProductController extends Controller
 
         $product->save();
 
-        return redirect()->route('products.index')->with('success', 'Actualizado correctamente.');
+        return redirect()->route('products.index')->with('success', 'Ingrediente actualizado.');
     }
 
     /**
-     * Eliminar
+     * Eliminar producto
      */
-public function destroy(Product $product)
+    public function destroy(Product $product)
     {
-        // 1. Verificación de propiedad (ya la tenías)
-        if ($product->isGlobal() || $product->user_id != \Illuminate\Support\Facades\Auth::id()) {
-            abort(403, 'No puedes borrar productos globales o de otros.');
+        // Permitir borrar si soy Admin O es mi producto
+        if (Auth::user()->hasRole('admin') || $product->user_id == Auth::id()) {
+            $product->delete();
+            return redirect()->route('products.index')->with('success', 'Ingrediente eliminado.');
         }
 
-        // 2. NUEVA VERIFICACIÓN DE ROL/PERMISO
-        // Si el usuario no tiene el permiso 'delete products', error 403
-        if (!\Illuminate\Support\Facades\Auth::user()->can('delete products')) {
-            abort(403, 'Tu rol de usuario no permite eliminar productos.');
-        }
-
-        $product->delete();
-
-        return redirect()->route('products.index')->with('success', 'Ingrediente eliminado.');
+        abort(403, 'No puedes borrar este producto.');
     }
 
     /**
-     * Alternar Favorito (Simplificado)
+     * Marcar/Desmarcar Favorito
      */
     public function toggleFavorite(Product $product)
     {
         // Solo permitimos marcar favoritos los productos PROPIOS
-        // porque usamos una columna simple en la base de datos.
         if ($product->user_id == Auth::id()) {
             $product->is_favorite = !$product->is_favorite;
             $product->save();

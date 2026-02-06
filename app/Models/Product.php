@@ -4,9 +4,9 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Builder; // Importante para los Scopes
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Support\Facades\Auth;
 
 class Product extends Model
 {
@@ -44,20 +44,26 @@ class Product extends Model
                     ->withTimestamps();
     }
 
-    // --- SCOPES (Arreglan los errores del Controlador) ---
+    // --- SCOPE DE VISIBILIDAD (LA CLAVE DEL PROBLEMA) ---
 
-    // Permite hacer: Product::accessibleBy(auth()->id())->get()
-    public function scopeAccessibleBy(Builder $query, int $userId): Builder
+    public function scopeAccessibleBy($query)
     {
-        return $query->where(function ($q) use ($userId) {
-            $q->whereNull('user_id')            // Productos Globales (BEDCA)
-              ->orWhere('user_id', $userId);    // Mis Productos
+        $user = Auth::user();
+
+        // 1. Si es ADMINISTRADOR, devolvemos TODO.
+        // (Esto arregla que no veas los productos de los usuarios)
+        if ($user && $user->hasRole('admin')) {
+            return $query;
+        }
+
+        // 2. Si es USUARIO NORMAL, devolvemos Globales (Null) + Suyos
+        return $query->where(function($q) use ($user) {
+            $q->whereNull('user_id'); // Globales
+
+            if ($user) {
+                $q->orWhere('user_id', $user->id); // Mis productos
+            }
         });
-    }
-
-    public function scopeFavorites(Builder $query): Builder
-    {
-        return $query->where('is_favorite', true);
     }
 
     // --- UTILIDADES ---
@@ -67,7 +73,6 @@ class Product extends Model
         return is_null($this->user_id);
     }
 
-    // Calcula nutrientes según gramos (útil para los platos)
     public function getNutrientsForQuantity(float $grams): array
     {
         $factor = $grams / 100;
